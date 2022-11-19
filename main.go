@@ -13,14 +13,17 @@ import (
 var s *discordgo.Session
 
 func init() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
+	if os.Getenv("PRODUCTION") == "false" {
+		err := godotenv.Load()
+		if err != nil {
+			log.Fatal("Error loading .env file")
+		}
 	}
 
 	// Load BotToken
 	BotToken := os.Getenv("BOT_TOKEN")
 
+	var err error
 	s, err = discordgo.New("Bot " + BotToken)
 	if err != nil {
 		log.Fatalf("Invalid bot parameters: %v", err)
