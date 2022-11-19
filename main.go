@@ -8,9 +8,27 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
+type Config struct {
+	gorm.Model
+	GuildId                     string
+	WelcomeMessage              string
+	WelcomeMessageAttachmentURL string
+	PinsChannelId               string
+}
+
+var genericErrorResponse = &discordgo.InteractionResponse{
+	Type: discordgo.InteractionResponseChannelMessageWithSource,
+	Data: &discordgo.InteractionResponseData{
+		Content: "An unknown error occurred, please try again.",
+	},
+}
+
 var s *discordgo.Session
+var db *gorm.DB
 
 func init() {
 	if os.Getenv("PRODUCTION") == "false" {
@@ -30,12 +48,26 @@ func init() {
 	}
 }
 
-var dmPermission = false
+func init() {
+	var err error
+	db, err = gorm.Open(postgres.Open(os.Getenv("POSTGRES_DSN")), &gorm.Config{})
+
+	if err != nil {
+		log.Fatalf("Could not connect to database: %v", err)
+	}
+
+	if db.Migrator().HasTable(&Config{}) == false {
+		db.Migrator().CreateTable(&Config{})
+	}
+}
+
+var noDM = false
+var configPermission int64 = discordgo.PermissionAdministrator
 var commands = []*discordgo.ApplicationCommand{
 	{
 		Name:         "welcome",
 		Description:  "Various commands related to welcome",
-		DMPermission: &dmPermission,
+		DMPermission: &noDM,
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Name:        "test",
@@ -49,6 +81,19 @@ var commands = []*discordgo.ApplicationCommand{
 						Required:    false,
 					},
 				},
+			},
+		},
+	},
+	{
+		Name:                     "config",
+		Description:              "Various commands related to configuration",
+		DMPermission:             &noDM,
+		DefaultMemberPermissions: &configPermission,
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Name:        "list",
+				Description: "Lists available config options with their current values",
 			},
 		},
 	},
@@ -69,7 +114,7 @@ var commandHandlers = map[string]CommandHandler{
 				testCommandOptionMap[opt.Name] = opt
 			}
 
-			userId := i.Interaction.Member.User.ID
+			userId := i.Member.User.ID
 
 			if option, ok := testCommandOptionMap["user"]; ok {
 				userId = option.UserValue(nil).ID
@@ -81,6 +126,31 @@ var commandHandlers = map[string]CommandHandler{
 					Content: fmt.Sprintf("Welcome <@%s>!", userId),
 				},
 			})
+		}
+	},
+	"config": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		options := i.ApplicationCommandData().Options
+
+		switch options[0].Name {
+		case "list":
+			var config = Config{GuildId: i.GuildID}
+
+			result := db.Where(&config).FirstOrCreate(&config)
+
+			switch {
+			case result.Error != nil:
+				log.Print(result.Error)
+				s.InteractionRespond(i.Interaction, genericErrorResponse)
+
+			default:
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: fmt.Sprintf("Configuration for %s:\n\nWelcome message: %s\nWelcome message attachment: %s\nPins channel: %s", i.GuildID, config.WelcomeMessage, config.WelcomeMessageAttachmentURL, config.PinsChannelId),
+					},
+				})
+			}
+
 		}
 	},
 }
