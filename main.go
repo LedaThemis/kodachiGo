@@ -4,8 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
@@ -40,7 +43,7 @@ func init() { flag.Parse() }
 
 func init() {
 	// Load .env only if --testing=true
-	if *TESTING == true {
+	if *TESTING {
 		err := godotenv.Load()
 		if err != nil {
 			log.Fatal("Error loading .env file")
@@ -65,7 +68,7 @@ func init() {
 		log.Fatalf("Could not connect to database: %v", err)
 	}
 
-	if db.Migrator().HasTable(&Config{}) == false {
+	if !db.Migrator().HasTable(&Config{}) {
 		db.Migrator().CreateTable(&Config{})
 	}
 }
@@ -175,12 +178,52 @@ var commandHandlers = map[string]CommandHandler{
 				userId = option.UserValue(nil).ID
 			}
 
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: fmt.Sprintf("Welcome <@%s>!", userId),
-				},
-			})
+			var guildConfig = Config{}
+
+			result := db.Where(&Config{GuildId: i.GuildID}).First(&guildConfig)
+
+			switch {
+			case result.Error != nil:
+				log.Print(result.Error)
+				s.InteractionRespond(i.Interaction, genericErrorResponse)
+
+			default:
+				messageContent := strings.ReplaceAll(guildConfig.WelcomeMessage, "<@USER_ID>", fmt.Sprintf("<@%s>", userId))
+
+				validAttachmentURL, err := url.ParseRequestURI(guildConfig.WelcomeMessageAttachmentURL)
+				if err != nil {
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "Attachment url is invalid.",
+						},
+					})
+					return
+				}
+
+				resp, err := http.Get(validAttachmentURL.String())
+
+				if err != nil {
+					log.Printf("An error occurred while fetching image: %v", err)
+				}
+
+				defer resp.Body.Close()
+
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: messageContent,
+						Files: []*discordgo.File{
+							{
+								ContentType: resp.Header.Get("Content-Type"),
+								Name:        "welcome.png",
+								Reader:      resp.Body,
+							},
+						},
+					},
+				})
+			}
+
 		}
 	},
 	"config": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -221,7 +264,18 @@ var commandHandlers = map[string]CommandHandler{
 			case "welcome_message":
 				newGuildConfig.WelcomeMessage = subSubCommandOptionMap["message"].StringValue()
 			case "welcome_message_attachment":
-				newGuildConfig.WelcomeMessageAttachmentURL = subSubCommandOptionMap["attachment_url"].StringValue()
+				validAttachmentURL, err := url.ParseRequestURI(subSubCommandOptionMap["attachment_url"].StringValue())
+				if err != nil {
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "Please provide a valid url.",
+						},
+					})
+					return
+				}
+
+				newGuildConfig.WelcomeMessageAttachmentURL = validAttachmentURL.String()
 			case "pins_channel_id":
 				newGuildConfig.PinsChannelId = subSubCommandOptionMap["channel"].ChannelValue(s).ID
 			}
@@ -269,7 +323,7 @@ func main() {
 
 	registeredCommands := make([]*discordgo.ApplicationCommand, len(commands))
 	guildId := "" // Empty to register global commands
-	if *REGISTER_COMMANDS == true {
+	if *REGISTER_COMMANDS {
 		log.Println("Adding commands...")
 
 		for i, command := range commands {
