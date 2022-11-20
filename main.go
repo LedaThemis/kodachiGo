@@ -104,6 +104,52 @@ var commands = []*discordgo.ApplicationCommand{
 				Name:        "list",
 				Description: "Lists available config options with their current values",
 			},
+			{
+				Type:        discordgo.ApplicationCommandOptionSubCommandGroup,
+				Name:        "set",
+				Description: "Updates config with provided values",
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Type:        discordgo.ApplicationCommandOptionSubCommand,
+						Name:        "welcome_message",
+						Description: "Set Welcome Message",
+						Options: []*discordgo.ApplicationCommandOption{
+							{
+								Type:        discordgo.ApplicationCommandOptionString,
+								Name:        "message",
+								Description: "New welcome message",
+								Required:    true,
+							},
+						},
+					},
+					{
+						Type:        discordgo.ApplicationCommandOptionSubCommand,
+						Name:        "welcome_message_attachment",
+						Description: "Set Welcome Message Attachment",
+						Options: []*discordgo.ApplicationCommandOption{
+							{
+								Type:        discordgo.ApplicationCommandOptionString,
+								Name:        "attachment_url",
+								Description: "New attachment url",
+								Required:    true,
+							},
+						},
+					},
+					{
+						Type:        discordgo.ApplicationCommandOptionSubCommand,
+						Name:        "pins_channel_id",
+						Description: "Set Pins Channel ID",
+						Options: []*discordgo.ApplicationCommandOption{
+							{
+								Type:        discordgo.ApplicationCommandOptionChannel,
+								Name:        "channel",
+								Description: "New pins channel",
+								Required:    true,
+							},
+						},
+					},
+				},
+			},
 		},
 	},
 }
@@ -155,7 +201,43 @@ var commandHandlers = map[string]CommandHandler{
 				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseChannelMessageWithSource,
 					Data: &discordgo.InteractionResponseData{
-						Content: fmt.Sprintf("Configuration for %s:\n\nWelcome message: %s\nWelcome message attachment: %s\nPins channel: %s", i.GuildID, config.WelcomeMessage, config.WelcomeMessageAttachmentURL, config.PinsChannelId),
+						Content: fmt.Sprintf("Configuration for %s:\n\nWelcome message: %s\nWelcome message attachment: <%s>\nPins channel: %s", i.GuildID, config.WelcomeMessage, config.WelcomeMessageAttachmentURL, config.PinsChannelId),
+					},
+				})
+			}
+		case "set":
+			var newGuildConfig = Config{GuildId: i.GuildID}
+
+			subCommandOptions := options[0].Options
+			subSubCommandOptions := subCommandOptions[0].Options
+
+			subSubCommandOptionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(subSubCommandOptions))
+			for _, opt := range subSubCommandOptions {
+				subSubCommandOptionMap[opt.Name] = opt
+			}
+
+			switch subCommandOptions[0].Name {
+
+			case "welcome_message":
+				newGuildConfig.WelcomeMessage = subSubCommandOptionMap["message"].StringValue()
+			case "welcome_message_attachment":
+				newGuildConfig.WelcomeMessageAttachmentURL = subSubCommandOptionMap["attachment_url"].StringValue()
+			case "pins_channel_id":
+				newGuildConfig.PinsChannelId = subSubCommandOptionMap["channel"].ChannelValue(s).ID
+			}
+
+			result := db.Model(&Config{}).Where(&Config{GuildId: i.GuildID}).Updates(&newGuildConfig)
+
+			switch {
+			case result.Error != nil:
+				log.Print(result.Error)
+				s.InteractionRespond(i.Interaction, genericErrorResponse)
+
+			default:
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "Successfully updated config!",
 					},
 				})
 			}
