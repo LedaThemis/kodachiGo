@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -20,6 +21,11 @@ type Config struct {
 	PinsChannelId               string
 }
 
+var (
+	REGISTER_COMMANDS = flag.Bool("register-commands", true, "True by default (useful in development)")
+	TESTING           = flag.Bool("testing", false, "")
+)
+
 var genericErrorResponse = &discordgo.InteractionResponse{
 	Type: discordgo.InteractionResponseChannelMessageWithSource,
 	Data: &discordgo.InteractionResponseData{
@@ -30,8 +36,11 @@ var genericErrorResponse = &discordgo.InteractionResponse{
 var s *discordgo.Session
 var db *gorm.DB
 
+func init() { flag.Parse() }
+
 func init() {
-	if os.Getenv("PRODUCTION") == "false" {
+	// Load .env only if --testing=true
+	if *TESTING == true {
 		err := godotenv.Load()
 		if err != nil {
 			log.Fatal("Error loading .env file")
@@ -176,18 +185,21 @@ func main() {
 		log.Fatalf("Cannot open the session: %v", err)
 	}
 
-	log.Println("Adding commands...")
 	registeredCommands := make([]*discordgo.ApplicationCommand, len(commands))
 	guildId := "" // Empty to register global commands
-	for i, command := range commands {
+	if *REGISTER_COMMANDS == true {
+		log.Println("Adding commands...")
 
-		cmd, err := s.ApplicationCommandCreate(s.State.User.ID, guildId, command)
+		for i, command := range commands {
 
-		if err != nil {
-			log.Panicf("Cannot create '%v' command: %v", command.Name, err)
+			cmd, err := s.ApplicationCommandCreate(s.State.User.ID, guildId, command)
+
+			if err != nil {
+				log.Panicf("Cannot create '%v' command: %v", command.Name, err)
+			}
+
+			registeredCommands[i] = cmd
 		}
-
-		registeredCommands[i] = cmd
 	}
 
 	defer s.Close()
