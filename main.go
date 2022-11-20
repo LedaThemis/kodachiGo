@@ -1,15 +1,13 @@
 package main
 
 import (
-	"errors"
 	"flag"
-	"fmt"
+	kodachiEvents "kodachi/bot/events"
+	"kodachi/bot/handlers"
+	"kodachi/bot/models"
 	"log"
-	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
@@ -17,26 +15,10 @@ import (
 	"gorm.io/gorm"
 )
 
-type Config struct {
-	gorm.Model
-	GuildId                     string
-	WelcomeMessage              string
-	WelcomeMessageAttachmentURL string
-	WelcomeChannelId            string
-	PinsChannelId               string
-}
-
 var (
 	REGISTER_COMMANDS = flag.Bool("register-commands", true, "True by default (useful in development)")
 	TESTING           = flag.Bool("testing", false, "")
 )
-
-var genericErrorResponse = &discordgo.InteractionResponse{
-	Type: discordgo.InteractionResponseChannelMessageWithSource,
-	Data: &discordgo.InteractionResponseData{
-		Content: "An unknown error occurred, please try again.",
-	},
-}
 
 var s *discordgo.Session
 var db *gorm.DB
@@ -71,12 +53,12 @@ func init() {
 		log.Fatalf("Could not connect to database: %v", err)
 	}
 
-	if !db.Migrator().HasTable(&Config{}) {
-		db.Migrator().CreateTable(&Config{})
+	if !db.Migrator().HasTable(&models.Config{}) {
+		db.Migrator().CreateTable(&models.Config{})
 	}
 
-	if !db.Migrator().HasColumn(&Config{}, "welcome_channel_id") {
-		db.Migrator().AddColumn(&Config{}, "welcome_channel_id")
+	if !db.Migrator().HasColumn(&models.Config{}, "welcome_channel_id") {
+		db.Migrator().AddColumn(&models.Config{}, "welcome_channel_id")
 	}
 }
 
@@ -177,159 +159,8 @@ var commands = []*discordgo.ApplicationCommand{
 	},
 }
 
-type CommandHandler = func(s *discordgo.Session, i *discordgo.InteractionCreate)
-
-var commandHandlers = map[string]CommandHandler{
-	"welcome": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-		options := i.ApplicationCommandData().Options
-
-		switch options[0].Name {
-		case "test":
-			testCommandOptions := options[0].Options
-
-			testCommandOptionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(testCommandOptions))
-			for _, opt := range testCommandOptions {
-				testCommandOptionMap[opt.Name] = opt
-			}
-
-			userId := i.Member.User.ID
-
-			if option, ok := testCommandOptionMap["user"]; ok {
-				userId = option.UserValue(nil).ID
-			}
-
-			var guildConfig = Config{}
-
-			result := db.Where(&Config{GuildId: i.GuildID}).First(&guildConfig)
-
-			switch {
-			case result.Error != nil:
-				log.Print(result.Error)
-				s.InteractionRespond(i.Interaction, genericErrorResponse)
-
-			default:
-				messageContent := strings.ReplaceAll(guildConfig.WelcomeMessage, "<@USER_ID>", fmt.Sprintf("<@%s>", userId))
-
-				validAttachmentURL, err := url.ParseRequestURI(guildConfig.WelcomeMessageAttachmentURL)
-				if err != nil {
-					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-						Type: discordgo.InteractionResponseChannelMessageWithSource,
-						Data: &discordgo.InteractionResponseData{
-							Content: "Attachment url is invalid.",
-						},
-					})
-					return
-				}
-
-				resp, err := http.Get(validAttachmentURL.String())
-
-				if err != nil {
-					log.Printf("An error occurred while fetching image: %v", err)
-				}
-
-				defer resp.Body.Close()
-
-				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseChannelMessageWithSource,
-					Data: &discordgo.InteractionResponseData{
-						Content: messageContent,
-						Files: []*discordgo.File{
-							{
-								ContentType: resp.Header.Get("Content-Type"),
-								Name:        "welcome.png",
-								Reader:      resp.Body,
-							},
-						},
-					},
-				})
-			}
-
-		}
-	},
-	"config": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-		options := i.ApplicationCommandData().Options
-
-		switch options[0].Name {
-		case "list":
-			var config = Config{GuildId: i.GuildID}
-
-			result := db.Where(&config).FirstOrCreate(&config)
-
-			switch {
-			case result.Error != nil:
-				log.Print(result.Error)
-				s.InteractionRespond(i.Interaction, genericErrorResponse)
-
-			default:
-				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseChannelMessageWithSource,
-					Data: &discordgo.InteractionResponseData{
-						Content: fmt.Sprintf("Configuration for %s:\n\nWelcome message: %s\nWelcome message attachment: <%s>\nPins channel: %s", i.GuildID, config.WelcomeMessage, config.WelcomeMessageAttachmentURL, config.PinsChannelId),
-					},
-				})
-			}
-		case "set":
-			var newGuildConfig = Config{GuildId: i.GuildID}
-
-			subCommandOptions := options[0].Options
-			subSubCommandOptions := subCommandOptions[0].Options
-
-			subSubCommandOptionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(subSubCommandOptions))
-			for _, opt := range subSubCommandOptions {
-				subSubCommandOptionMap[opt.Name] = opt
-			}
-
-			switch subCommandOptions[0].Name {
-
-			case "welcome_message":
-				newGuildConfig.WelcomeMessage = subSubCommandOptionMap["message"].StringValue()
-			case "welcome_message_attachment":
-				validAttachmentURL, err := url.ParseRequestURI(subSubCommandOptionMap["attachment_url"].StringValue())
-				if err != nil {
-					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-						Type: discordgo.InteractionResponseChannelMessageWithSource,
-						Data: &discordgo.InteractionResponseData{
-							Content: "Please provide a valid url.",
-						},
-					})
-					return
-				}
-
-				newGuildConfig.WelcomeMessageAttachmentURL = validAttachmentURL.String()
-			case "pins_channel_id":
-				newGuildConfig.PinsChannelId = subSubCommandOptionMap["channel"].ChannelValue(s).ID
-			case "welcome_channel_id":
-				newGuildConfig.WelcomeChannelId = subSubCommandOptionMap["channel"].ChannelValue(s).ID
-			}
-
-			result := db.Model(&Config{}).Where(&Config{GuildId: i.GuildID}).Updates(&newGuildConfig)
-
-			switch {
-			case result.Error != nil:
-				log.Print(result.Error)
-				s.InteractionRespond(i.Interaction, genericErrorResponse)
-
-			default:
-				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseChannelMessageWithSource,
-					Data: &discordgo.InteractionResponseData{
-						Content: "Successfully updated config!",
-					},
-				})
-			}
-
-		}
-	},
-}
-
 func init() {
-	s.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-		// If command handler exists
-		if handler, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
-			// Call with session and interaction
-			handler(s, i)
-		}
-	})
+	s.AddHandler(handlers.InteractionCreateHandler(db))
 }
 
 func main() {
@@ -337,67 +168,7 @@ func main() {
 		log.Printf("Logged in as: %v#%v", s.State.User.Username, s.State.User.Discriminator)
 	})
 
-	s.AddHandler(func(s *discordgo.Session, e *discordgo.GuildMemberAdd) {
-		var guildConfig = Config{}
-
-		result := db.Where(&Config{GuildId: e.GuildID}).First(&guildConfig)
-
-		switch {
-		case errors.Is(result.Error, gorm.ErrRecordNotFound):
-			log.Println("Server is not configured.")
-		case result.Error != nil:
-			log.Print(result.Error)
-		default:
-			if guildConfig.WelcomeChannelId == "" {
-				log.Printf("Welcome channel is not configured")
-				return
-			}
-
-			if guildConfig.WelcomeMessage == "" {
-				log.Printf("Welcome message is not configured")
-				return
-			}
-
-			messageContent := strings.ReplaceAll(guildConfig.WelcomeMessage, "<@USER_ID>", fmt.Sprintf("<@%s>", e.User.ID))
-
-			var messageFiles []*discordgo.File
-
-			if guildConfig.WelcomeMessageAttachmentURL != "" {
-				validAttachmentURL, err := url.ParseRequestURI(guildConfig.WelcomeMessageAttachmentURL)
-				if err != nil {
-					s.ChannelMessageSendComplex(guildConfig.WelcomeChannelId, &discordgo.MessageSend{
-						Content: "Attachment url is invalid.",
-					})
-					return
-				}
-
-				resp, err := http.Get(validAttachmentURL.String())
-
-				if err != nil {
-					log.Printf("An error occurred while fetching image: %v", err)
-				}
-
-				messageFiles = []*discordgo.File{
-					{
-						ContentType: resp.Header.Get("Content-Type"),
-						Name:        "welcome.png",
-						Reader:      resp.Body,
-					},
-				}
-
-				defer resp.Body.Close()
-			}
-
-			_, err := s.ChannelMessageSendComplex(guildConfig.WelcomeChannelId, &discordgo.MessageSend{
-				Content: messageContent,
-				Files:   messageFiles,
-			})
-
-			if err != nil {
-				log.Printf("Failed to send welcome message in %v: %v", e.GuildID, err)
-			}
-		}
-	})
+	s.AddHandler(kodachiEvents.WelcomeMessageEventHandler(db))
 
 	err := s.Open()
 
