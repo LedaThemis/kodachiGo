@@ -10,3 +10,12 @@ type Config struct {
 	WelcomeChannelId            string
 	PinsChannelId               string
 }
+
+type Birthday struct {
+	gorm.Model
+	UserId     string
+	Name       string
+	BirthDay   int64
+	BirthMonth int64
+	AuthorId   string // User that added birthday entry
+}

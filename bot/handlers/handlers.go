@@ -1,13 +1,16 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"kodachi/bot/models"
 	"kodachi/bot/responses"
+	"kodachi/utils"
 	"log"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"gorm.io/gorm"
@@ -15,8 +18,9 @@ import (
 
 func InteractionCreateHandler(db *gorm.DB) func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	var commandHandlers = map[string]CommandHandler{
-		"welcome": welcomeCommandHandler(db),
-		"config":  configCommandHandler(db),
+		"welcome":  welcomeCommandHandler(db),
+		"config":   configCommandHandler(db),
+		"birthday": birthdayCommandHandler(db),
 	}
 
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -171,6 +175,217 @@ func configCommandHandler(db *gorm.DB) CommandHandler {
 				})
 			}
 
+		}
+	}
+}
+
+func birthdayCommandHandler(db *gorm.DB) CommandHandler {
+	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		options := i.ApplicationCommandData().Options
+
+		var subCommand = options[0]
+		var subCommandOptions = subCommand.Options
+
+		subCommandOptionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(subCommandOptions))
+		for _, opt := range subCommandOptions {
+			subCommandOptionMap[opt.Name] = opt
+		}
+
+		switch options[0].Name {
+		case "add":
+			birthdayUserId := subCommandOptionMap["user_id"].StringValue()
+
+			var authorId string
+
+			if i.User != nil {
+				authorId = i.User.ID
+			} else {
+				authorId = i.Member.User.ID
+			}
+
+			userBirthday := models.Birthday{AuthorId: authorId, UserId: birthdayUserId}
+
+			result := db.Where(&userBirthday).First(&userBirthday)
+
+			switch {
+			// Birthday does not exist, create it
+			case errors.Is(result.Error, gorm.ErrRecordNotFound):
+				userBirthday.Name = subCommandOptionMap["name"].StringValue()
+				userBirthday.BirthDay = subCommandOptionMap["day"].IntValue()
+				userBirthday.BirthMonth = subCommandOptionMap["month"].IntValue()
+
+				result := db.Create(&userBirthday)
+
+				switch {
+				case result.Error != nil:
+					log.Print(result.Error)
+					s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+
+				default:
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "Successfully added birthday entry.",
+						},
+					})
+				}
+
+			case result.Error != nil:
+				log.Print(result.Error)
+				s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+			// Birthday exists
+			default:
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "You've already added a birthday for this user.",
+					},
+				})
+			}
+
+		case "update":
+			birthdayUserId := subCommandOptionMap["user_id"].StringValue()
+
+			var birthdayUpdate models.Birthday
+
+			if subCommandOptionMap["name"] != nil {
+				birthdayUpdate.Name = subCommandOptionMap["name"].StringValue()
+			}
+
+			if subCommandOptionMap["day"] != nil {
+				birthdayUpdate.BirthDay = subCommandOptionMap["day"].IntValue()
+			}
+
+			if subCommandOptionMap["month"] != nil {
+				birthdayUpdate.BirthMonth = subCommandOptionMap["month"].IntValue()
+			}
+
+			var authorId string
+
+			if i.User != nil {
+				authorId = i.User.ID
+			} else {
+				authorId = i.Member.User.ID
+			}
+
+			userBirthday := models.Birthday{AuthorId: authorId, UserId: birthdayUserId}
+
+			result := db.Where(&userBirthday).First(&models.Birthday{})
+
+			switch {
+			// Birthday does not exist, inform user
+			case errors.Is(result.Error, gorm.ErrRecordNotFound):
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "Birthday entry does not exist.",
+					},
+				})
+
+			case result.Error != nil:
+				log.Print(result.Error)
+				s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+			// Birthday updated
+			default:
+
+				result := db.Where(&userBirthday).Updates(&birthdayUpdate)
+
+				switch {
+
+				case result.Error != nil:
+					log.Print(result.Error)
+					s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+
+				default:
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "Successfully updated birthday entry.",
+						},
+					})
+				}
+			}
+
+		case "delete":
+			birthdayUserId := subCommandOptionMap["user_id"].StringValue()
+
+			var authorId string
+
+			if i.User != nil {
+				authorId = i.User.ID
+			} else {
+				authorId = i.Member.User.ID
+			}
+
+			userBirthday := models.Birthday{AuthorId: authorId, UserId: birthdayUserId}
+
+			result := db.Where(&userBirthday).First(&userBirthday)
+
+			switch {
+			// Birthday does not exist, inform user
+			case errors.Is(result.Error, gorm.ErrRecordNotFound):
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "Birthday entry does not exist.",
+					},
+				})
+
+			case result.Error != nil:
+				log.Print(result.Error)
+				s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+			// Birthday exists, delete it
+			default:
+				result := db.Where(&userBirthday).Delete(&userBirthday)
+
+				switch {
+				case result.Error != nil:
+					log.Print(result.Error)
+					s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+				default:
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "Successfully deleted birthday entry.",
+						},
+					})
+				}
+			}
+		case "list":
+			var author *discordgo.User
+
+			if i.User != nil {
+				author = i.User
+			} else {
+				author = i.Member.User
+			}
+
+			var authorId = author.ID
+
+			userBirthdays := []models.Birthday{}
+
+			result := db.Where(&models.Birthday{AuthorId: authorId}).Find(&userBirthdays)
+
+			switch {
+			case result.Error != nil:
+				log.Print(result.Error)
+				s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+			default:
+				var birthdaysListMessage string
+
+				birthdaysListMessage += fmt.Sprintf("**List of Birthdays**\nAuthor: %v#%v\n\n", author.Username, author.Discriminator)
+
+				for i, birthday := range userBirthdays {
+					birthdaysListMessage += fmt.Sprintf("%v. %s born %s of %s\n- Mention: <@%s> | Discord ID: %s\n\n", i+1, birthday.Name, utils.Ordinal(int(birthday.BirthDay)), time.Month(birthday.BirthMonth), birthday.UserId, birthday.UserId)
+				}
+
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: birthdaysListMessage,
+					},
+				})
+			}
 		}
 	}
 }

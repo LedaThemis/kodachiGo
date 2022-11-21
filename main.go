@@ -64,6 +64,10 @@ func init() {
 	if !db.Migrator().HasColumn(&models.Config{}, "welcome_channel_id") {
 		db.Migrator().AddColumn(&models.Config{}, "welcome_channel_id")
 	}
+
+	if !db.Migrator().HasTable(&models.Birthday{}) {
+		db.Migrator().CreateTable(&models.Birthday{})
+	}
 }
 
 // Add Handlers
