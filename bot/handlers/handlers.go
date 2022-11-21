@@ -376,6 +376,10 @@ func birthdayCommandHandler(db *gorm.DB) CommandHandler {
 
 				birthdaysListMessage += fmt.Sprintf("**List of Birthdays**\nAuthor: %v#%v\n\n", author.Username, author.Discriminator)
 
+				if len(userBirthdays) == 0 {
+					birthdaysListMessage += fmt.Sprintf("\n%v has not added any birthdays yet.", author.Username)
+				}
+
 				for i, birthday := range userBirthdays {
 					birthdaysListMessage += fmt.Sprintf("%v. %s born %s of %s\n- Mention: <@%s> | Discord ID: %s\n\n", i+1, birthday.Name, utils.Ordinal(int(birthday.BirthDay)), time.Month(birthday.BirthMonth), birthday.UserId, birthday.UserId)
 				}
