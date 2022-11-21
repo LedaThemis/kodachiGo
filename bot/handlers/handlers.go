@@ -18,9 +18,10 @@ import (
 
 func InteractionCreateHandler(db *gorm.DB) func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	var commandHandlers = map[string]CommandHandler{
-		"welcome":  welcomeCommandHandler(db),
-		"config":   configCommandHandler(db),
-		"birthday": birthdayCommandHandler(db),
+		"welcome":     welcomeCommandHandler(db),
+		"config":      configCommandHandler(db),
+		"birthday":    birthdayCommandHandler(db),
+		"Pin Message": pinCommandHandler(db),
 	}
 
 	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -383,6 +384,144 @@ func birthdayCommandHandler(db *gorm.DB) CommandHandler {
 					Type: discordgo.InteractionResponseChannelMessageWithSource,
 					Data: &discordgo.InteractionResponseData{
 						Content: birthdaysListMessage,
+					},
+				})
+			}
+		}
+	}
+}
+
+func pinCommandHandler(db *gorm.DB) CommandHandler {
+	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		messageId := i.ApplicationCommandData().TargetID
+
+		message, err := s.ChannelMessage(i.ChannelID, messageId)
+
+		if err != nil {
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "There was an error fetching message to be pinned.",
+				},
+			})
+			return
+		}
+
+		var config = models.Config{GuildId: i.GuildID}
+
+		result := db.Where(&config).First(&config)
+
+		switch {
+		// Pins channel is not configured, inform user
+		case errors.Is(result.Error, gorm.ErrRecordNotFound) || config.PinsChannelId == "":
+			s.InteractionRespond(i.Interaction, responses.NoPinsChannelConfigured)
+		case result.Error != nil:
+			s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+
+		// Pins channel is configured, send message to it
+		default:
+			var usableWebhook *discordgo.Webhook
+			author := i.Member.User
+
+			_, err := s.Channel(config.PinsChannelId)
+
+			if err != nil {
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "Configured pins channel does not exist.",
+					},
+				})
+				return
+			}
+
+			webhooks, err := s.ChannelWebhooks(config.PinsChannelId)
+
+			if err != nil {
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "Failed to get guild webhooks, check bot permissions.",
+					},
+				})
+				return
+			}
+
+			exists := false
+
+			for _, webhook := range webhooks {
+				if webhook.ApplicationID == s.State.User.ID {
+					exists = true
+
+					usableWebhook = webhook
+				}
+			}
+
+			if !exists {
+				// Create a webhook
+				usableWebhook, err = s.WebhookCreate(config.PinsChannelId, fmt.Sprintf("Pins [%s]", s.State.User.Username), "")
+
+				if err != nil {
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "Failed to create a webhook, please create one yourself or check bot permissions.",
+						},
+					})
+					return
+				}
+			}
+
+			wait := false
+
+			buttonRow := discordgo.ActionsRow{
+				Components: []discordgo.MessageComponent{
+					discordgo.Button{
+						Label: "Jump",
+						Style: discordgo.LinkButton,
+						URL:   utils.MessageURL(i.GuildID, message.ChannelID, message.ID),
+					},
+				},
+			}
+
+			messageFiles, err := utils.AttachmentsToFile(message.Attachments)
+
+			if err != nil {
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "Failed to download message attachment, please try again.",
+					},
+				})
+				return
+			}
+
+			_, err = s.WebhookExecute(usableWebhook.ID, usableWebhook.Token, wait, &discordgo.WebhookParams{
+				Username:   author.Username,
+				AvatarURL:  author.AvatarURL(""),
+				Content:    message.Content,
+				Embeds:     message.Embeds,
+				TTS:        message.TTS,
+				Files:      messageFiles,
+				Components: append(message.Components, buttonRow),
+				AllowedMentions: &discordgo.MessageAllowedMentions{
+					Parse: []discordgo.AllowedMentionType{},
+				},
+			})
+
+			if err != nil {
+				log.Printf("An error occurred while sending pin message: %v", err)
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "Failed to send the pinned message, please try again.",
+					},
+				})
+			} else {
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: fmt.Sprintf("<@%s> pinned a message from this channel. See all pinned messages <#%s>", author.ID, config.PinsChannelId),
 					},
 				})
 			}

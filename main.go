@@ -46,6 +46,8 @@ func init() {
 		log.Fatalf("Invalid bot parameters: %v", err)
 	}
 	s.Identify.Intents |= discordgo.IntentGuildMembers
+	s.Identify.Intents |= discordgo.IntentGuildWebhooks
+	s.Identify.Intents |= discordgo.IntentMessageContent
 }
 
 // Initiate database connection

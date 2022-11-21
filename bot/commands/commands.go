@@ -8,6 +8,7 @@ var Commands = []*discordgo.ApplicationCommand{
 	&welcomeCommand,
 	&configCommand,
 	&birthdayCommand,
+	&pinCommand,
 }
 
 var welcomeCommand = discordgo.ApplicationCommand{
@@ -201,4 +202,13 @@ var birthdayCommand = discordgo.ApplicationCommand{
 			Description: "List birthday entries",
 		},
 	},
+}
+
+var pinPermissions int64 = discordgo.PermissionManageMessages
+
+var pinCommand = discordgo.ApplicationCommand{
+	Name:                     "Pin Message",
+	DMPermission:             &noDM,
+	DefaultMemberPermissions: &pinPermissions,
+	Type:                     discordgo.MessageApplicationCommand,
 }
