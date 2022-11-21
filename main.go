@@ -6,11 +6,14 @@ import (
 	kodachiEvents "kodachi/bot/events"
 	"kodachi/bot/handlers"
 	"kodachi/bot/models"
+	kodachiTasks "kodachi/bot/tasks"
 	"log"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/go-co-op/gocron"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -83,13 +86,25 @@ func init() {
 	s.AddHandler(kodachiEvents.WelcomeMessageEventHandler(db))
 }
 
-func main() {
+// Create websocket connection to Discord
+func init() {
 	err := s.Open()
 
 	if err != nil {
 		log.Fatalf("Cannot open the session: %v", err)
 	}
+}
 
+// Add Tasks
+func init() {
+	scheduler := gocron.NewScheduler(time.UTC)
+
+	scheduler.Every(1).Day().At("00:00").Do(kodachiTasks.BirthdayCheck(db, s))
+
+	scheduler.StartAsync()
+}
+
+func main() {
 	registeredCommands := make([]*discordgo.ApplicationCommand, len(commands.Commands))
 	guildId := "" // Empty to register global commands
 	if *REGISTER_COMMANDS {
