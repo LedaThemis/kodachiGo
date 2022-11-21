@@ -4,7 +4,7 @@ import (
 	"fmt"
 )
 
-// Convert month days to ordinal indicators
+// Convert month days to contain ordinal indicators
 func Ordinal(n int) string {
 	suffix := "th"
 	switch n % 10 {
