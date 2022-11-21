@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -380,7 +381,34 @@ func birthdayCommandHandler(db *gorm.DB) CommandHandler {
 					birthdaysListMessage += fmt.Sprintf("\n%v has not added any birthdays yet.", author.Username)
 				}
 
+				sort.SliceStable(userBirthdays, func(i, j int) bool {
+					return utils.CompareDates(userBirthdays[i].BirthMonth, userBirthdays[i].BirthDay, userBirthdays[j].BirthMonth, userBirthdays[j].BirthDay)
+				})
+
+				current := time.Now().UTC()
+				currentMonth := int64(current.Month())
+				currentDay := int64(current.Day())
+
+				last := userBirthdays[len(userBirthdays)-1]
+				lastEarlierThanCurrent := utils.CompareDates(last.BirthMonth, last.BirthDay, currentMonth, currentDay)
+
+				addedNextBirthdayMarker := false
+
 				for i, birthday := range userBirthdays {
+					birthdayToday := utils.SameDates(currentMonth, currentDay, birthday.BirthMonth, birthday.BirthDay)
+					laterThanCurrent := utils.CompareDates(currentMonth, currentDay, birthday.BirthMonth, birthday.BirthDay)
+
+					if birthdayToday {
+						birthdaysListMessage += fmt.Sprintf("**Happy Birthday %v!!** 🎉🥳\n", birthday.Name)
+					}
+
+					// If last is earlier than current, first is the next birthday, otherwise any date later than current is next.
+					if !addedNextBirthdayMarker {
+						if lastEarlierThanCurrent && i == 0 || laterThanCurrent {
+							birthdaysListMessage += "**Next birthday** ⬇️\n"
+							addedNextBirthdayMarker = true
+						}
+					}
 					birthdaysListMessage += fmt.Sprintf("%v. %s born %s of %s\n- Mention: <@%s> | Discord ID: %s\n\n", i+1, birthday.Name, utils.Ordinal(int(birthday.BirthDay)), time.Month(birthday.BirthMonth), birthday.UserId, birthday.UserId)
 				}
 

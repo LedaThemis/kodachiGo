@@ -54,3 +54,13 @@ func AttachmentsToFile(attachments []*discordgo.MessageAttachment) ([]*discordgo
 
 	return files, nil
 }
+
+// Returns true if (m1/d1) is earlier than (m2/d2)
+func CompareDates(m1, d1, m2, d2 int64) bool {
+	return m1 < m2 || (m1 == m2 && d1 < d2)
+}
+
+// Returns true if (m1/d1) and (m2/d2) are the same
+func SameDates(m1, d1, m2, d2 int64) bool {
+	return m1 == m2 && d1 == d2
+}
