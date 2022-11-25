@@ -748,7 +748,7 @@ func treeCommandHandler(db *gorm.DB) CommandHandler {
 				for _, member := range treeMembers {
 					parentName := ""
 
-					if name, ok := treeMembersIdMap[member.ParentId]; ok {
+					if name, ok := treeMembersIdMap[member.ParentId]; ok || member.ParentId == "" {
 						parentName = name
 					} else {
 						s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
