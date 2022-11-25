@@ -9,6 +9,7 @@ var Commands = []*discordgo.ApplicationCommand{
 	&configCommand,
 	&birthdayCommand,
 	&pinCommand,
+	&treeCommand,
 }
 
 var welcomeCommand = discordgo.ApplicationCommand{
@@ -211,4 +212,79 @@ var pinCommand = discordgo.ApplicationCommand{
 	DMPermission:             &noDM,
 	DefaultMemberPermissions: &pinPermissions,
 	Type:                     discordgo.MessageApplicationCommand,
+}
+
+var treeCommand = discordgo.ApplicationCommand{
+	Name:        "tree",
+	Description: "Various command relating to the server's members tree",
+	Options: []*discordgo.ApplicationCommandOption{
+		{
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+			Name:        "add",
+			Description: "Add tree entry",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionUser,
+					Name:        "user",
+					Description: "User to add to the tree",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "name",
+					Description: "Name of user to display in the tree",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionUser,
+					Name:        "parent",
+					Description: "Parent of user to add",
+					Required:    false,
+				},
+			},
+		},
+		{
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+			Name:        "update",
+			Description: "Update tree entry",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionUser,
+					Name:        "user",
+					Description: "User to update in the tree",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "name",
+					Description: "New name of user to display in the tree",
+					Required:    false,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionUser,
+					Name:        "parent",
+					Description: "Parent of user to add",
+					Required:    false,
+				},
+			},
+		},
+		{
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+			Name:        "delete",
+			Description: "Delete tree entry",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "user_id",
+					Description: "ID of user to delete from tree",
+					Required:    true,
+				},
+			},
+		},
+		{
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+			Name:        "view",
+			Description: "View server tree",
+		},
+	},
 }

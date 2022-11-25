@@ -73,6 +73,10 @@ func init() {
 	if !db.Migrator().HasTable(&models.Birthday{}) {
 		db.Migrator().CreateTable(&models.Birthday{})
 	}
+
+	if !db.Migrator().HasTable(&models.TreeMember{}) {
+		db.Migrator().CreateTable(&models.TreeMember{})
+	}
 }
 
 // Add Handlers

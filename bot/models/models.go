@@ -19,3 +19,11 @@ type Birthday struct {
 	BirthMonth int64
 	AuthorId   string // User that added birthday entry
 }
+
+type TreeMember struct {
+	gorm.Model
+	UserId   string
+	Name     string
+	ParentId string // "" if no parent
+	GuildId  string
+}

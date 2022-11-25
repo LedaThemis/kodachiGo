@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"kodachi/bot/models"
 	"kodachi/bot/responses"
+	"kodachi/packages/trees"
 	"kodachi/utils"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -22,6 +24,7 @@ func InteractionCreateHandler(db *gorm.DB) func(s *discordgo.Session, i *discord
 		"welcome":     welcomeCommandHandler(db),
 		"config":      configCommandHandler(db),
 		"birthday":    birthdayCommandHandler(db),
+		"tree":        treeCommandHandler(db),
 		"Pin Message": pinCommandHandler(db),
 	}
 
@@ -557,6 +560,258 @@ func pinCommandHandler(db *gorm.DB) CommandHandler {
 					},
 				})
 			}
+		}
+	}
+}
+
+func treeCommandHandler(db *gorm.DB) CommandHandler {
+	return func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		options := i.ApplicationCommandData().Options
+
+		var subCommand = options[0]
+		var subCommandOptions = subCommand.Options
+
+		subCommandOptionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(subCommandOptions))
+		for _, opt := range subCommandOptions {
+			subCommandOptionMap[opt.Name] = opt
+		}
+
+		switch options[0].Name {
+		case "add":
+			treeUserId := subCommandOptionMap["user"].UserValue(nil).ID
+			treeUserName := subCommandOptionMap["name"].StringValue()
+
+			parentUserId := ""
+
+			if subCommandOptionMap["parent"] != nil {
+				parentUserId = subCommandOptionMap["parent"].UserValue(nil).ID
+			}
+
+			treeMember := models.TreeMember{UserId: treeUserId, GuildId: i.GuildID}
+
+			result := db.Where(&treeMember).First(&treeMember)
+
+			switch {
+			// Tree member does not exist, create it
+			case errors.Is(result.Error, gorm.ErrRecordNotFound):
+				treeMember.Name = treeUserName
+				treeMember.ParentId = parentUserId
+
+				result := db.Create(&treeMember)
+
+				switch {
+				case result.Error != nil:
+					log.Print(result.Error)
+					s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+
+				default:
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "Successfully added tree member.",
+						},
+					})
+				}
+
+			case result.Error != nil:
+				log.Print(result.Error)
+				s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+			// Tree member exists
+			default:
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "You've already added this user to the tree.",
+					},
+				})
+			}
+		case "update":
+			treeUserId := subCommandOptionMap["user"].UserValue(nil).ID
+
+			parentUserId := ""
+
+			if subCommandOptionMap["parent"] != nil {
+				parentUserId = subCommandOptionMap["parent"].UserValue(nil).ID
+			}
+
+			var treeMemberUpdate models.TreeMember
+
+			if subCommandOptionMap["name"] != nil {
+				treeMemberUpdate.Name = subCommandOptionMap["name"].StringValue()
+			}
+
+			if subCommandOptionMap["parent"] != nil {
+				treeMemberUpdate.ParentId = parentUserId
+			}
+
+			treeMember := models.TreeMember{UserId: treeUserId, GuildId: i.GuildID}
+
+			result := db.Where(&treeMember).First(&models.TreeMember{})
+
+			switch {
+			// Tree member does not exist, inform user
+			case errors.Is(result.Error, gorm.ErrRecordNotFound):
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "User is not added to the tree.",
+					},
+				})
+
+			case result.Error != nil:
+				log.Print(result.Error)
+				s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+			// Tree member updated
+			default:
+				result := db.Where(&treeMember).Updates(&treeMemberUpdate)
+
+				switch {
+				case result.Error != nil:
+					log.Print(result.Error)
+					s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+
+				default:
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "Successfully updated tree member.",
+						},
+					})
+				}
+			}
+		case "delete":
+			treeUserId := subCommandOptionMap["user_id"].StringValue()
+
+			treeMember := models.TreeMember{UserId: treeUserId, GuildId: i.GuildID}
+
+			result := db.Where(&treeMember).First(&treeMember)
+
+			switch {
+			// Tree member does not exist, inform user
+			case errors.Is(result.Error, gorm.ErrRecordNotFound):
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "User is not added to the tree.",
+					},
+				})
+
+			case result.Error != nil:
+				log.Print(result.Error)
+				s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+			// Tree member exists, delete it
+			default:
+				result := db.Where(&treeMember).Delete(&treeMember)
+
+				switch {
+				case result.Error != nil:
+					log.Print(result.Error)
+					s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+				default:
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "Successfully deleted user from tree.",
+						},
+					})
+				}
+			}
+		case "view":
+
+			treeMembers := []models.TreeMember{}
+
+			result := db.Where(&models.TreeMember{GuildId: i.GuildID}).Find(&treeMembers)
+
+			switch {
+			case result.Error != nil:
+				log.Print(result.Error)
+				s.InteractionRespond(i.Interaction, responses.GenericErrorResponse)
+			default:
+				if len(treeMembers) == 0 {
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "There are no users added to the tree.",
+						},
+					})
+					return
+				}
+
+				treeMembersIdMap := make(map[string]string)
+
+				for _, member := range treeMembers {
+					treeMembersIdMap[member.UserId] = member.Name
+				}
+
+				treeMembersMap := make(map[string][]string)
+
+				for _, member := range treeMembers {
+					parentName := ""
+
+					if name, ok := treeMembersIdMap[member.ParentId]; ok {
+						parentName = name
+					} else {
+						s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+							Type: discordgo.InteractionResponseChannelMessageWithSource,
+							Data: &discordgo.InteractionResponseData{
+								Content: fmt.Sprintf("There is a member whose parent is not in the tree.\n\n Member: %s (<@%s>), Parent: <@%s>", member.Name, member.UserId, member.ParentId),
+							},
+						})
+						return
+					}
+
+					if children, ok := treeMembersMap[parentName]; ok {
+						treeMembersMap[parentName] = append(children, member.Name)
+					} else {
+						treeMembersMap[parentName] = []string{member.Name}
+					}
+				}
+
+				if len(treeMembersMap[""]) > 1 {
+					membersWithNoParents := strings.Join(treeMembersMap[""], ", ")
+
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: fmt.Sprintf("There are multiple origins (users with no parents), which is not supported.\n\nList of members: %s", membersWithNoParents),
+						},
+					})
+					return
+				}
+
+				tree := utils.ConstructTreeNode(treeMembersMap, treeMembersMap[""][0])
+
+				trees.DrawTree(&tree, 100.0, 100.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, "out.png")
+
+				file, err := os.Open("out.png")
+
+				if err != nil {
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "An error occurred while rendering image.",
+						},
+					})
+				} else {
+					s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{
+							Content: "",
+							Files: []*discordgo.File{
+								{
+									Name:        "tree.png",
+									ContentType: "image/png",
+									Reader:      file,
+								},
+							},
+						},
+					})
+
+					file.Close()
+				}
+
+			}
+
 		}
 	}
 }
