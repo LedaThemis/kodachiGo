@@ -215,8 +215,9 @@ var pinCommand = discordgo.ApplicationCommand{
 }
 
 var treeCommand = discordgo.ApplicationCommand{
-	Name:        "tree",
-	Description: "Various command relating to the server's members tree",
+	Name:         "tree",
+	Description:  "Various command relating to the server's members tree",
+	DMPermission: &noDM,
 	Options: []*discordgo.ApplicationCommandOption{
 		{
 			Type:        discordgo.ApplicationCommandOptionSubCommand,
