@@ -1,6 +1,9 @@
 package trees
 
 import (
+	"log"
+	"os"
+
 	"github.com/fogleman/gg"
 )
 
@@ -114,6 +117,15 @@ func DrawTree(tree *TreeNode, rectH, rectW, gapX, gapY, paddingTop, paddingBotto
 
 	dc.SetHexColor("#36393f")
 	dc.Clear()
+
+	dir, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("Error getting working directory: %v\n", err)
+	}
+
+	if err := dc.LoadFontFace(dir+"/packages/trees/fonts/Roboto/Roboto-Regular.ttf", 14); err != nil {
+		log.Panicf("Error loading font face: %v\n", err)
+	}
 
 	origins := make(map[string]OriginType)
 	originX, originY := width/2, 0.0
