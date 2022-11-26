@@ -51,8 +51,10 @@ func drawBox(dc *gg.Context, row, boxesInRow, index int64, gapX, gapY, rectW, re
 		dc.Stroke()
 	}
 
+	fontPaddingX := 5.0
+
 	dc.SetRGB(0, 0, 0)
-	dc.DrawStringAnchored(text, x+(rectW/2), y+(rectH/2), 0.5, 0.5)
+	dc.DrawStringWrapped(text, x+(rectW/2), y+(rectH/2), 0.5, 0.5, rectW-fontPaddingX, 1.0, gg.AlignCenter)
 
 	return x + rectW/2, y + rectH
 }
