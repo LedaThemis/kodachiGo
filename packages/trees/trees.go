@@ -51,9 +51,10 @@ func drawBox(dc *gg.Context, row, boxesInRow, index int64, gapX, gapY, rectW, re
 	dc.Stroke()
 
 	if row > 1 {
-		dc.DrawLine(lineOriginX, lineOriginY, x+(rectW/2), y)
-		dc.SetRGB(0, 0.25, 0.5)
-		dc.SetLineWidth(1)
+		lineStrokeWidth := 1.0
+		dc.DrawLine(lineOriginX, lineOriginY+lineStrokeWidth, x+(rectW/2), y-lineStrokeWidth)
+		dc.SetRGB(1, 1, 1)
+		dc.SetLineWidth(lineStrokeWidth)
 		dc.Stroke()
 	}
 
