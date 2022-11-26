@@ -105,8 +105,7 @@ func DrawTree(tree *TreeNode, rectH, rectW, gapX, gapY, paddingTop, paddingBotto
 
 	dc := gg.NewContext(int(width), int(height))
 
-	// Fill whole image with white
-	dc.SetRGB(1, 1, 1)
+	dc.SetHexColor("#36393f")
 	dc.Clear()
 
 	origins := make(map[string]OriginType)
