@@ -40,6 +40,12 @@ func drawBox(dc *gg.Context, row, boxesInRow, index int64, gapX, gapY, rectW, re
 	var y float64 = paddingTop + ((rectH + gapY) * float64(row-1))
 
 	dc.DrawRoundedRectangle(x, y, rectW, rectH, ((rectW+rectH)/2)/12)
+	// Background
+	dc.SetRGB(1, 1, 1)
+	dc.Fill()
+
+	// Border
+	dc.DrawRoundedRectangle(x, y, rectW, rectH, ((rectW+rectH)/2)/12)
 	dc.SetRGB(0, 0, 0)
 	dc.SetLineWidth(2)
 	dc.Stroke()
