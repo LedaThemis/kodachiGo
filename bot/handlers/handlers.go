@@ -781,7 +781,7 @@ func treeCommandHandler(db *gorm.DB) CommandHandler {
 
 				tree := utils.ConstructTreeNode(treeMembersMap, treeMembersMap[""][0])
 
-				trees.DrawTree(&tree, 100.0, 100.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, "out.png")
+				trees.DrawTree(&tree, 75.0, 75.0, 5.0, 50.0, 50.0, 50.0, 50.0, 50.0, "out.png")
 
 				file, err := os.Open("out.png")
 
