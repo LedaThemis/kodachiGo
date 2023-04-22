@@ -415,13 +415,23 @@ func birthdayCommandHandler(db *gorm.DB) CommandHandler {
 					birthdaysListMessage += fmt.Sprintf("%v. %s born %s of %s\n- Mention: <@%s> | Discord ID: %s\n\n", i+1, birthday.Name, utils.Ordinal(int(birthday.BirthDay)), time.Month(birthday.BirthMonth), birthday.UserId, birthday.UserId)
 				}
 
-				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseChannelMessageWithSource,
 					Data: &discordgo.InteractionResponseData{
-						Flags:   discordgo.MessageFlagsEphemeral,
-						Content: birthdaysListMessage,
+						Embeds: []*discordgo.MessageEmbed{
+							{
+								Description: birthdaysListMessage,
+							},
+						},
 					},
 				})
+
+				if err != nil {
+					log.Print(err)
+					s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+						Content: responses.GenericErrorResponse.Data.Content,
+					})
+				}
 			}
 		}
 	}
