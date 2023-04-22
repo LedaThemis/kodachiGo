@@ -418,6 +418,7 @@ func birthdayCommandHandler(db *gorm.DB) CommandHandler {
 				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 					Type: discordgo.InteractionResponseChannelMessageWithSource,
 					Data: &discordgo.InteractionResponseData{
+						Flags:   discordgo.MessageFlagsEphemeral,
 						Content: birthdaysListMessage,
 					},
 				})
